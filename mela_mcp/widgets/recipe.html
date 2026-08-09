@@ -1,0 +1,616 @@
+<style>
+  :root {
+    --bg: #211E18;
+    --cream: #F7F3EA;
+    --muted: #9A948A;
+    --gold: #F2B705;
+    --hair: rgba(255, 255, 255, 0.12);
+    --white: #FFFFFF;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--white);
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  #card {
+    max-width: 640px;
+    margin: 0 auto;
+    background: var(--bg);
+    overflow: hidden;
+  }
+  .hero {
+    display: block;
+    width: 100%;
+    max-height: 420px;
+    object-fit: cover;
+    background: #000;
+  }
+  .thumbs {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 10px 20px 0;
+  }
+  .thumbs img {
+    height: 72px;
+    width: 96px;
+    object-fit: cover;
+    border-radius: 8px;
+    flex: 0 0 auto;
+  }
+  .body { padding: 20px 22px 28px; }
+  .title {
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    font-weight: 700;
+    font-size: 38px;
+    line-height: 1.1;
+    color: var(--cream);
+    margin: 6px 0 14px;
+  }
+  .meta-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 8px 0;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--white);
+  }
+  .meta-row .ico { flex: 0 0 auto; color: var(--muted); display: inline-flex; }
+  .meta-row .ico svg { width: 18px; height: 18px; display: block; }
+  .info {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    margin: 16px 0 4px;
+    flex-wrap: wrap;
+  }
+  .info .grp { display: flex; align-items: center; gap: 10px; }
+  .info .ico { color: var(--muted); display: inline-flex; }
+  .info .ico svg { width: 20px; height: 20px; display: block; }
+  .info .servings { font-size: 22px; font-weight: 700; color: var(--cream); }
+  .vdiv { width: 1px; align-self: stretch; min-height: 30px; background: var(--hair); }
+  .times { display: flex; align-items: flex-start; gap: 18px; }
+  .time .num { font-size: 20px; font-weight: 700; color: var(--cream); line-height: 1.15; }
+  .time .lbl {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .desc {
+    font-size: 17px;
+    line-height: 1.5;
+    color: var(--white);
+    margin: 16px 0 4px;
+    white-space: pre-wrap;
+  }
+  .hair { height: 1px; background: var(--hair); margin: 20px 0; border: 0; }
+  .section-title {
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    font-weight: 700;
+    font-size: 22px;
+    color: var(--cream);
+    margin: 0 0 12px;
+  }
+  .ingredient {
+    font-size: 17px;
+    line-height: 1.4;
+    color: var(--muted);
+    padding: 7px 0;
+  }
+  .ingredient strong { color: var(--cream); font-weight: 700; }
+  .steps { list-style: none; counter-reset: step; margin: 0; padding: 0; }
+  .steps li {
+    position: relative;
+    counter-increment: step;
+    padding: 0 0 16px 40px;
+    font-size: 17px;
+    line-height: 1.5;
+    color: var(--white);
+    white-space: pre-wrap;
+  }
+  .steps li::before {
+    content: counter(step);
+    position: absolute;
+    left: 0;
+    top: -1px;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--gold);
+    font-size: 14px;
+    font-weight: 700;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .notes {
+    font-size: 16px;
+    line-height: 1.5;
+    color: var(--muted);
+    white-space: pre-wrap;
+  }
+  .empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 160px;
+    padding: 40px 22px;
+  }
+  .empty-msg {
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    font-size: 20px;
+    color: var(--muted);
+    text-align: center;
+  }
+</style>
+
+<div id="card"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  var PROTOCOL_VERSION = "2026-01-26";
+  var parentWin = window.parent;
+  var initId = 1;
+  var initialized = false;
+
+  // Pull-path state (Krea's get_job pattern): Claude Desktop strips
+  // structuredContent from the tool-result it pushes into the iframe, so the
+  // widget must fetch its own data via a host-relayed tools/call.
+  var DATA_TOOL = "get_recipe_widget_data";
+  var requestSeq = 0;
+  var pendingRequests = {};   // request id -> { resolve, reject, timer }
+  var recipeId = null;        // captured from ui/notifications/tool-input
+  var rendered = false;
+  var fetching = false;
+  var fetchedId = null;       // recipe id a pull was issued for
+  var lastFetchError = null;
+
+  // --- inline SVG icons (static strings, no external refs) ---
+  var ICONS = {
+    book: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5z"/><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/></svg>',
+    tag: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 12 22l-9-9V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.3" fill="currentColor" stroke="none"/></svg>',
+    people: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 20v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1"/><circle cx="9" cy="8" r="3.2"/><path d="M22 20v-1a4 4 0 0 0-3-3.85"/><path d="M15.5 4.9a3.2 3.2 0 0 1 0 6.2"/></svg>',
+    clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>'
+  };
+
+  // ---- postMessage plumbing ----
+  function post(msg) { parentWin.postMessage(msg, "*"); }
+  function respond(id, result) { post({ jsonrpc: "2.0", id: id, result: result || {} }); }
+  function notify(method, params) { post({ jsonrpc: "2.0", method: method, params: params || {} }); }
+
+  // Widget-initiated JSON-RPC request to the host, correlated by id through a
+  // pending map — the exact mechanism Krea uses to poll get_job.
+  function sendRequest(method, params, timeoutMs) {
+    var id = "mela-recipe-widget-" + (++requestSeq);
+    return new Promise(function (resolve, reject) {
+      var timer = window.setTimeout(function () {
+        delete pendingRequests[id];
+        reject(new Error(method + " timed out"));
+      }, timeoutMs || 30000);
+      pendingRequests[id] = { resolve: resolve, reject: reject, timer: timer };
+      post({ jsonrpc: "2.0", id: id, method: method, params: params || {} });
+    });
+  }
+
+  function sendSize() {
+    try {
+      var h = Math.ceil(document.documentElement.getBoundingClientRect().height);
+      notify("ui/notifications/size-changed", { width: Math.ceil(window.innerWidth), height: h });
+    } catch (e) { /* ignore */ }
+  }
+
+  // Complete the handshake exactly once: after the ui/initialize response
+  // (result OR error), or on a timeout for hosts that never reply. Krea ships
+  // the same tolerance ("some hosts deliver the initial tool result without
+  // responding to ui/initialize") -- gating on a successful init response can
+  // leave the host waiting for `initialized` and never pushing the tool result.
+  function sendInitialized() {
+    if (initialized) return;
+    initialized = true;
+    notify("ui/notifications/initialized", {});
+    sendSize();
+    maybeFetch();
+  }
+
+  // Hosts differ in where the CallToolResult lives on a tool-result
+  // notification (Claude Desktop nests it; the ext-apps draft inlines it).
+  // Mirror Krea's tolerant chain: params.result, params.toolResult, params
+  // itself when result-shaped, then message.result.
+  function resultFromMessage(message) {
+    var params = message.params;
+    if (params && params.result) return params.result;
+    if (params && params.toolResult) return params.toolResult;
+    if (params && (params.content || params.structuredContent ||
+                   params.structured_content || params.isError)) return params;
+    if (message.result) return message.result;
+    return null;
+  }
+
+  // Prefer structuredContent; fall back to a JSON object serialized in a
+  // text content block (Krea's recovery path for hosts that drop it).
+  function payloadFromResult(result) {
+    var sc = result.structuredContent || result.structured_content;
+    if (sc && typeof sc === "object") return sc;
+    var content = result.content;
+    if (Array.isArray(content)) {
+      for (var i = 0; i < content.length; i++) {
+        var item = content[i];
+        if (item && item.type === "text" && typeof item.text === "string") {
+          try {
+            var parsed = JSON.parse(item.text);
+            if (parsed && typeof parsed === "object") return parsed;
+          } catch (e) { /* not JSON; keep scanning */ }
+        }
+      }
+    }
+    return {};
+  }
+
+  // Tolerant tool-arguments extraction (Krea's getInputArgumentsFromNotification):
+  // params.arguments, params.toolCall/.toolInput/.input.arguments, params.input,
+  // then params itself.
+  function argsFromMessage(message) {
+    var p = message.params;
+    if (p && p.arguments && typeof p.arguments === "object") return p.arguments;
+    if (p && p.toolCall && p.toolCall.arguments && typeof p.toolCall.arguments === "object") return p.toolCall.arguments;
+    if (p && p.toolInput && p.toolInput.arguments && typeof p.toolInput.arguments === "object") return p.toolInput.arguments;
+    if (p && p.input && p.input.arguments && typeof p.input.arguments === "object") return p.input.arguments;
+    if (p && p.input && typeof p.input === "object") return p.input;
+    if (p && typeof p === "object") return p;
+    return {};
+  }
+
+  function captureRecipeId(message) {
+    var args = argsFromMessage(message);
+    var id = args.recipe_id != null ? args.recipe_id : args.recipeId;
+    if (typeof id === "string" && /^\d+$/.test(id)) id = parseInt(id, 10);
+    if (typeof id !== "number" || !isFinite(id)) return;
+    if (recipeId !== id) {
+      recipeId = id;
+      // New recipe: allow a fresh pull and render.
+      rendered = false;
+      fetching = false;
+      fetchedId = null;
+    }
+  }
+
+  // Ask the host to relay a tools/call to the app-only data tool and render
+  // from its RESPONSE — the data never transits the model's context.
+  function maybeFetch() {
+    if (!initialized || rendered || fetching || recipeId == null) return;
+    if (fetchedId === recipeId) return; // already pulled for this recipe
+    fetching = true;
+    fetchedId = recipeId;
+    sendRequest("tools/call", { name: DATA_TOOL, arguments: { recipe_id: recipeId } }, 30000)
+      .then(function (response) {
+        fetching = false;
+        var result = (response && response.result) || response;
+        if (!result || result.isError) {
+          renderError("This recipe could not be loaded.");
+          sendSize();
+          return;
+        }
+        applyPayload(payloadFromResult(result));
+      })
+      .catch(function () {
+        fetching = false;
+        renderError("This recipe could not be loaded.");
+        sendSize();
+      });
+  }
+
+  // Shared terminal step for both the push (secondary) and pull (primary) paths.
+  function applyPayload(payload) {
+    if (payload.not_found) { rendered = true; renderError("Recipe not found."); sendSize(); return; }
+    if (!hasText(payload.title)) { renderError("This recipe could not be loaded."); sendSize(); return; }
+    try {
+      render(payload);
+      rendered = true;
+    } catch (e) {
+      renderError("This recipe could not be loaded.");
+    }
+    sendSize();
+  }
+
+  window.addEventListener("message", function (event) {
+    // Krea does no source/origin filtering; a strict gate can silently drop
+    // host messages relayed through the sandbox. Accept any object payload.
+    var data = event.data;
+    if (!data || typeof data !== "object") return;
+
+    // Response to one of our widget-initiated requests (the pull path) —
+    // correlated by id through the pending map, checked first like Krea.
+    if (data.id !== undefined && data.id !== null && pendingRequests[data.id]) {
+      var pending = pendingRequests[data.id];
+      window.clearTimeout(pending.timer);
+      delete pendingRequests[data.id];
+      if (data.error) pending.reject(new Error(data.error.message || "JSON-RPC error"));
+      else pending.resolve(data);
+      return;
+    }
+
+    if (typeof data.method === "string") {
+      // Notification or request from host.
+      if (data.method === "ui/notifications/tool-input") {
+        captureRecipeId(data);
+        maybeFetch();
+        return;
+      }
+      if (data.method === "ui/notifications/tool-result") {
+        handleResult(data);
+        return;
+      }
+      // Requests that expect a response so the host doesn't stall.
+      if (data.id !== undefined && data.id !== null) {
+        if (data.method === "ping" || data.method === "ui/resource-teardown") {
+          respond(data.id, {});
+        }
+      }
+      return;
+    }
+
+    // Response (result or error) to our ui/initialize request.
+    if (data.id === initId) sendInitialized();
+  });
+
+  // Kick off the handshake. Listener is registered above first, so the
+  // one-shot tool-result notification can't be missed.
+  post({
+    jsonrpc: "2.0",
+    id: initId,
+    method: "ui/initialize",
+    params: {
+      appCapabilities: {},
+      appInfo: { name: "Mela Recipe", version: "1.0.0" },
+      protocolVersion: PROTOCOL_VERSION
+    }
+  });
+  window.setTimeout(sendInitialized, 5000);
+
+  window.addEventListener("resize", sendSize);
+  if (typeof ResizeObserver !== "undefined") {
+    try { new ResizeObserver(sendSize).observe(document.documentElement); } catch (e) {}
+  }
+
+  function handleResult(message) {
+    // Some hosts include the tool arguments on the result envelope too.
+    captureRecipeId(message);
+    var result = resultFromMessage(message);
+    if (result && result.isError) {
+      rendered = true;
+      renderError("This recipe could not be loaded.");
+      sendSize();
+      return;
+    }
+    var payload = result ? payloadFromResult(result) : {};
+    if (payload.not_found) {
+      rendered = true;
+      renderError("Recipe not found.");
+      sendSize();
+      return;
+    }
+    if (hasText(payload.title)) {
+      // Secondary path: a host that DOES forward structuredContent (or a JSON
+      // text block) on the push. Claude Desktop strips it; others may not.
+      applyPayload(payload);
+      return;
+    }
+    // Claude Desktop's push carries only text content blocks — pull instead.
+    if (recipeId != null) { maybeFetch(); return; }
+    // No payload and no recipe_id yet: wait for the tool-input notification,
+    // which triggers the pull.
+    sendSize();
+  }
+
+  function hasText(v) {
+    return typeof v === "string" && v.trim().length > 0;
+  }
+
+  // ---- DOM helpers (textContent only for recipe data) ----
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+  function icon(name) {
+    var span = el("span", "ico");
+    span.innerHTML = ICONS[name] || "";  // static constant, never recipe data
+    return span;
+  }
+
+  function hostOf(link) {
+    try {
+      var h = new URL(link).hostname;
+      return h.replace(/^www\./, "");
+    } catch (e) {
+      return String(link);
+    }
+  }
+
+  // Bold a leading quantity/unit run; the rest renders muted.
+  var UNITS = {
+    cup: 1, cups: 1, tbsp: 1, tbs: 1, tablespoon: 1, tablespoons: 1,
+    tsp: 1, teaspoon: 1, teaspoons: 1, g: 1, gram: 1, grams: 1, kg: 1,
+    oz: 1, ounce: 1, ounces: 1, lb: 1, lbs: 1, pound: 1, pounds: 1,
+    ml: 1, l: 1, liter: 1, litre: 1, pinch: 1, clove: 1, cloves: 1,
+    can: 1, cans: 1, stick: 1, sticks: 1, slice: 1, slices: 1
+  };
+  function appendIngredient(container, line) {
+    var node = el("div", "ingredient");
+    // Match a leading numeric/fraction/range run (incl. unicode fractions).
+    var m = line.match(/^\s*[\d]+([.\/\-–—\s]*[\d]+)*\s*[¼-¾⅐-⅞]?\s*/);
+    var boldText = "";
+    var rest = line;
+    if (m && m[0].trim()) {
+      boldText = m[0].trim();
+      rest = line.slice(m[0].length);
+      // Optionally pull a following unit word into the bold run.
+      var um = rest.match(/^\s*([A-Za-z]+)\b/);
+      if (um && UNITS[um[1].toLowerCase()]) {
+        boldText += " " + um[1];
+        rest = rest.slice(um[0].length);
+      }
+    }
+    if (boldText) {
+      var strong = el("strong", null, boldText);
+      node.appendChild(strong);
+      node.appendChild(document.createTextNode(rest.replace(/^\s+/, " ")));
+    } else {
+      node.textContent = line;
+    }
+    container.appendChild(node);
+  }
+
+  function splitLines(text) {
+    return String(text).split(/\r?\n/).map(function (s) { return s.trim(); })
+      .filter(function (s) { return s.length > 0; });
+  }
+
+  function render(r) {
+    var card = document.getElementById("card");
+    card.textContent = "";
+
+    // Defense-in-depth: only ever paint data: URIs (server-controlled today).
+    var images = (Array.isArray(r.images) ? r.images : []).filter(isDataUri);
+
+    // Hero + thumbnail strip.
+    if (images.length > 0) {
+      var hero = document.createElement("img");
+      hero.className = "hero";
+      hero.src = images[0];              // data: URI supplied by the server
+      hero.alt = r.title || "recipe photo";
+      hero.addEventListener("load", sendSize);
+      card.appendChild(hero);
+
+      if (images.length > 1) {
+        var strip = el("div", "thumbs");
+        for (var i = 1; i < images.length; i++) {
+          var t = document.createElement("img");
+          t.src = images[i];
+          t.alt = "";
+          t.addEventListener("load", sendSize);
+          strip.appendChild(t);
+        }
+        card.appendChild(strip);
+      }
+    }
+
+    var body = el("div", "body");
+    card.appendChild(body);
+
+    if (r.title) body.appendChild(el("div", "title", r.title));
+
+    if (r.link) {
+      var srcRow = el("div", "meta-row");
+      srcRow.appendChild(icon("book"));
+      srcRow.appendChild(el("span", null, hostOf(r.link)));
+      body.appendChild(srcRow);
+    }
+
+    if (Array.isArray(r.tags) && r.tags.length > 0) {
+      var tagRow = el("div", "meta-row");
+      tagRow.appendChild(icon("tag"));
+      tagRow.appendChild(el("span", null, r.tags.join(", ")));
+      body.appendChild(tagRow);
+    }
+
+    // Info row: servings + times.
+    var times = [];
+    if (r.prepTime) times.push(["PREP", r.prepTime]);
+    if (r.cookTime) times.push(["COOK", r.cookTime]);
+    if (r.totalTime) times.push(["TOTAL", r.totalTime]);
+
+    if (r.yield || times.length > 0) {
+      var info = el("div", "info");
+      if (r.yield) {
+        var g = el("div", "grp");
+        g.appendChild(icon("people"));
+        g.appendChild(el("span", "servings", r.yield));
+        info.appendChild(g);
+      }
+      if (r.yield && times.length > 0) info.appendChild(el("div", "vdiv"));
+      if (times.length > 0) {
+        var tg = el("div", "grp");
+        tg.appendChild(icon("clock"));
+        var tw = el("div", "times");
+        times.forEach(function (pair) {
+          var col = el("div", "time");
+          col.appendChild(el("div", "num", pair[1]));
+          col.appendChild(el("div", "lbl", pair[0]));
+          tw.appendChild(col);
+        });
+        tg.appendChild(tw);
+        info.appendChild(tg);
+      }
+      body.appendChild(info);
+    }
+
+    if (hasText(r.description)) body.appendChild(el("div", "desc", r.description));
+
+    // Only emit a section when it has real (non-whitespace) rows.
+    var ingLines = hasText(r.ingredients) ? splitLines(r.ingredients) : [];
+    if (ingLines.length > 0) {
+      body.appendChild(el("hr", "hair"));
+      body.appendChild(el("div", "section-title", "Ingredients"));
+      var ingWrap = el("div", "ing-list");
+      ingLines.forEach(function (line) {
+        appendIngredient(ingWrap, line);
+      });
+      body.appendChild(ingWrap);
+    }
+
+    var stepLines = hasText(r.instructions) ? splitLines(r.instructions) : [];
+    if (stepLines.length > 0) {
+      body.appendChild(el("hr", "hair"));
+      body.appendChild(el("div", "section-title", "Method"));
+      var ol = el("ol", "steps");
+      stepLines.forEach(function (line) {
+        // Strip any leading "1." / "2)" so we don't double-number.
+        var clean = line.replace(/^\s*\d+[.)]\s*/, "");
+        ol.appendChild(el("li", null, clean));
+      });
+      body.appendChild(ol);
+    }
+
+    if (hasText(r.notes)) {
+      body.appendChild(el("hr", "hair"));
+      body.appendChild(el("div", "section-title", "Notes"));
+      body.appendChild(el("div", "notes", r.notes));
+    }
+
+    if (hasText(r.nutrition)) {
+      body.appendChild(el("hr", "hair"));
+      body.appendChild(el("div", "section-title", "Nutrition"));
+      body.appendChild(el("div", "notes", r.nutrition));
+    }
+
+    sendSize();
+  }
+
+  function isDataUri(v) {
+    return typeof v === "string" && v.indexOf("data:") === 0;
+  }
+
+  function renderError(message) {
+    var card = document.getElementById("card");
+    card.textContent = "";
+    var wrap = el("div", "empty");
+    wrap.appendChild(el("div", "empty-msg", message || "This recipe could not be loaded."));
+    card.appendChild(wrap);
+  }
+})();
+</script>
