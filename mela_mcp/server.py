@@ -33,10 +33,15 @@ def get_recipe(recipe_id: int, ctx: Context | None = None) -> list:
     """Get one recipe's full detail (ingredients, instructions, notes, times, tags)
     by its numeric id from search_recipes.
 
-    On hosts that support MCP Apps (e.g. Claude Desktop) a Mela-styled card with the
-    user's real photos renders inline automatically. Present the recipe text; the
-    photos appear only in that card and are not provided to you as content, so do
-    not describe or substitute images. Never use stock or web photos."""
+    On hosts that support MCP Apps (e.g. Claude Desktop, Cowork) a Mela-styled card
+    with the full recipe and the user's real photos renders inline automatically, so
+    do NOT repeat the recipe (ingredients, method, notes) in your reply. Refer to the
+    card and add only what the user asked for or what's useful beyond it: answers,
+    changes, corrections, substitutions. Only write out the recipe text if the host
+    can't render MCP Apps or the user asks for it in chat.
+
+    The photos appear only in that card and are not provided to you as content, so
+    do not describe or substitute images. Never use stock or web photos."""
     recipe, payload = _load_recipe(recipe_id)
     if recipe is None:
         return CallToolResult(
